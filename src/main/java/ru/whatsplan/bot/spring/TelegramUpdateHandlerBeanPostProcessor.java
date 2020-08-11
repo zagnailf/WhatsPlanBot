@@ -6,20 +6,24 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import ru.whatsplan.bot.spring.annotation.BotController;
-import ru.whatsplan.bot.spring.annotation.BotRequestMapping;
+import ru.whatsplan.bot.spring.annotation.*;
+import ru.whatsplan.bot.spring.annotation.SceneStep;
+import ru.whatsplan.bot.spring.bot.BotScript;
+import ru.whatsplan.bot.spring.bot.BotScriptContainer;
 
 import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Component
 @Slf4j
 public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor, Ordered {
 
-    private BotApiMethodContainer container = BotApiMethodContainer.getInstance();
+    private BotApiMethodContainer oldContainer = BotApiMethodContainer.getInstance();
+    private BotScriptContainer container = BotScriptContainer.getInstance();
     private Map<String, Class<?>> botControllerMap = new HashMap<>();
+    private Map<String, Object> botSceneBeanMap = new HashMap<>();
 
     @Override
     public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
@@ -32,35 +36,97 @@ public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-        if (!botControllerMap.containsKey(beanName)) {
-            return bean;
-        }
+        // TODO Исправить момент с принудительным объявлением StartBotController после всех контроллеров
+        // То есть искуственно изменил название класса, чтобы сначала добавлялись все конроллеры в мапу botControllerMap
+        // И в последнюю очередь выполнялся контроллер StartBotController для полной инициализации скрипта
+
+        // Если имя бина не содержится в мапе
+        if (!botControllerMap.containsKey(beanName)) return bean;
+        // Сохранить объект бина существующий в botControllerMap
+        botSceneBeanMap.put(beanName, bean);
+        // Если в бине методы не содержат анатацию @StartBot, то вернуть пришедший бин
+        boolean isStartBotBean = Arrays.stream(botControllerMap.get(beanName).getMethods()).anyMatch(method -> method.isAnnotationPresent(StartBot.class));
+        if (!isStartBotBean) return bean;
 
         Class<?> original = botControllerMap.get(beanName);
-        Arrays.stream(original.getMethods())
-                .filter(method -> method.isAnnotationPresent(BotRequestMapping.class))
-                .forEach(method -> generateController(bean, method));
+        Method startBotMethod = Arrays.stream(original.getMethods())
+                .filter(method -> method.isAnnotationPresent(StartBot.class))
+                .findFirst().orElse(null);
+        // Получить все методы помеченные анатацией @SceneStep
+        List<Method> sceneStepMethods = botControllerMap.values().stream()
+                .flatMap(controller -> Arrays.stream(controller.getMethods()))
+                .filter(method -> method.isAnnotationPresent(SceneStep.class))
+                .collect(Collectors.toList());
+
+        generateStartController(bean, startBotMethod, sceneStepMethods);
+
         return bean;
     }
 
-    private void generateController(Object bean, Method method) {
-        BotController botController = bean.getClass().getAnnotation(BotController.class);
-        BotRequestMapping botRequestMapping = method.getAnnotation(BotRequestMapping.class);
+    private void generateStartController(Object bean, Method superMethod, List<Method> sceneSteps) {
+        StartBot startScene = superMethod.getAnnotation(StartBot.class);
+        // TODO: Сделать для множественной команды
+        String startSceneCommand = getFirstCommand(startScene.value());
+        String[] startSceneNextCommands = startScene.next();
 
-        String path = String.format("%s%s",
-                botController.value().length != 0 ? botController.value()[0] : "",
-                botRequestMapping.value().length != 0 ? botRequestMapping.value()[0] : "");
-
-        switch (botRequestMapping.method()[0]) {
-            case MSG:
-                container.addBotController(path, createControllerUpdate2ApiMethod(bean, method));
-                break;
-            case EDIT:
-                container.addBotController(path, createProcessListForController(bean, method));
-        }
+        // Прохожу по всем следующим командам
+        // [/remind, /settings, ...]
+        Set<BotScript> nextScripts = generateNextController(sceneSteps, startSceneNextCommands);
+        BotApiMethodController controller = new BotApiMethodController(bean, superMethod) {
+            @Override
+            public boolean successUpdatePredicate(Update update) {
+                return update != null && update.hasMessage() && update.getMessage().hasText();
+            }
+        };
+        BotScript startBotScript = new BotScript(startSceneCommand, controller, nextScripts);
+        container.setScript(startBotScript);
     }
 
-    private BotApiMethodController createProcessListForController(Object bean, Method method) {
+    private Set<BotScript> generateNextController(List<Method> sceneSteps, String[] startSceneNextCommands) {
+        Set<BotScript> nextScripts = new HashSet<>();
+
+        for (String nextCommand : startSceneNextCommands) {
+            // Нахожу методы у которых value = nextCommand
+            Method method = sceneSteps.stream()
+                    .filter(currentMethod -> Arrays.asList(
+                                currentMethod.getAnnotation(SceneStep.class).value())
+                                    .contains(nextCommand))
+                    .findFirst().orElse(null);
+
+            if (method != null) {
+                SceneStep sceneStep = method.getAnnotation(SceneStep.class);
+                String[] next = sceneStep.next();
+                List<Pattern> patterns = Arrays.stream(sceneStep.patterns())
+                        .map(Pattern::compile)
+                        .collect(Collectors.toList());
+
+                String beanName = botControllerMap.entrySet().stream()
+                        .filter(entry -> Arrays.asList(entry.getValue().getMethods()).contains(method))
+                        .map(Map.Entry::getKey)
+                        .findFirst().orElse(null);
+                Object bean = botSceneBeanMap.get(beanName);
+
+                BotApiMethodController controller = new BotApiMethodController(bean, method) {
+                    @Override
+                    public boolean successUpdatePredicate(Update update) {
+                        return update != null && update.hasMessage() && update.getMessage().hasText();
+                    }
+                };
+
+                nextScripts.add(new BotScript(nextCommand, controller, patterns, generateNextController(sceneSteps, next)));
+            }
+        }
+
+        return nextScripts;
+    }
+
+    private String getFirstCommand(String[] commands) {
+        if (commands.length > 0)
+            return commands[0];
+        return null;
+    }
+
+    private BotApiMethodController createProcessCallbackController(Object bean, Method method) {
         return new BotApiMethodController(bean, method) {
             @Override
             public boolean successUpdatePredicate(Update update) {
@@ -69,7 +135,7 @@ public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor
         };
     }
 
-    private BotApiMethodController createControllerUpdate2ApiMethod(Object bean, Method method) {
+    private BotApiMethodController createProcessTextController(Object bean, Method method) {
         return new BotApiMethodController(bean, method) {
             @Override
             public boolean successUpdatePredicate(Update update) {

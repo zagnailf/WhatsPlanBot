@@ -9,7 +9,9 @@ import java.lang.annotation.Target;
 
 @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)
-public @interface BotRequestMapping {
-    String[] value() default {};
+public @interface SceneStep {
+    String[] value();
+    String[] next() default {};
+    String[] patterns() default {};
     BotRequestMethod[] method() default {BotRequestMethod.TEXT};
 }

@@ -19,10 +19,10 @@ import java.util.List;
 @Slf4j
 public class WhatsPlanBot extends TelegramLongPollingBot {
 
-    //@Value("telegram.bot.username")
-    private String username = "whats_plan_bot";
-    //@Value("telegram.bot.token")
-    private String token = "1249499913:AAEzmOEeLrvIcSWRZIjEtgJTRsOuRBu9Clo";
+    @Value("${telegram.bot.username}")
+    private String username;
+    @Value("${telegram.bot.token}")
+    private String token;
 
     @AfterBotRegistration
     public void afterBotRegistration(BotSession session) {
