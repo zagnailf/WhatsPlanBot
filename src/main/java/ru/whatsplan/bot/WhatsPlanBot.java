@@ -45,8 +45,7 @@ public class WhatsPlanBot extends TelegramLongPollingBot {
 
                     BotApiMethodController handle = SelectHandle.getHandle(update);
                     List<BotApiMethod<?>> methods = handle.process(update);
-                    methods.stream()
-                            .forEach(this::executeMethod);
+                    methods.forEach(this::executeMethod);
                 });
     }
 

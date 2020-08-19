@@ -16,11 +16,15 @@ public class BotScriptContainer {
 
     private final Map<Integer, BotScript> lastUserScript;
 
-    @Setter @Getter
+    @Getter
     private BotScript script;
+    private Map<String, BotScript> botStartScenes;
 
     public BotApiMethodController getBotApiMethodController(Integer userId, String message) {
-        if (message != null && message.startsWith("/start")) {
+
+        String command = getCommandFromMessage(message);
+
+        if (command != null && command.startsWith("/start")) {
             lastUserScript.put(userId, script);
             return script.getBotApiMethodController();
         }
@@ -30,18 +34,37 @@ public class BotScriptContainer {
         }
 
         BotScript currentScript = lastUserScript.get(userId);
-        Set<String> availableCommands = currentScript.getAvailableCommands();
-        if (!messageStartWithAnyCommand(message, availableCommands)) {
-            if (currentScript.match(message))
-                throw new CommandIsNotAvailableException(String.format("Команда \"%s\" не доступна для выполнения", message));
-        }
 
-        BotScript nextScript = currentScript.getNextScript(message);
-        if (nextScript == null) throw new CommandIsNotAvailableException(String.format("Команда \"%s\" не доступна для выполнения", message));
+        /*if (!messageStartWithAnyCommand(message, availableCommands)) {
+            if (!messageMatchWithAnyCommand(message, currentScript.getAvailableScripts()))
+                throw new CommandIsNotAvailableException(String.format("Команда \"%s\" не доступна для выполнения", command));
+        }*/
+
+        BotScript nextScript = currentScript.getScriptFromCommand(command);
+        nextScript = (nextScript == null && botStartScenes.containsKey(command)) ? botStartScenes.get(command) : nextScript;
+        nextScript = (nextScript == null) ? currentScript.getControlScriptFromCommand(command) : nextScript;
+        nextScript = (nextScript == null) ? currentScript.getControlScriptFromMessage(message) : nextScript;
+        nextScript = (nextScript == null) ? currentScript.getScriptFromMessage(message) : nextScript;
+        if (nextScript == null) throw new CommandIsNotAvailableException(String.format("Команда \"%s\" не доступна для выполнения", command));
 
         lastUserScript.put(userId, nextScript);
 
         return nextScript.getBotApiMethodController();
+    }
+
+    private String getCommandFromMessage(String message) {
+        if (message == null) return null;
+
+        if (message.startsWith("/")) {
+            int commandEndIndex = message.indexOf(" ");
+            return (commandEndIndex > 0) ? message.substring(0, commandEndIndex) : message;
+        }
+        return message;
+    }
+
+    public void setScript(BotScript script, Map<String, BotScript> botStartSceneCommandMap) {
+        this.script = script;
+        this.botStartScenes = botStartSceneCommandMap;
     }
 
     private boolean messageStartWithAnyCommand(String message, Set<String> availableCommands) {

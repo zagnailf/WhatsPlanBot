@@ -2,6 +2,7 @@ package ru.whatsplan.bot.controller;
 
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import ru.whatsplan.bot.spring.BotSceneMode;
 import ru.whatsplan.bot.spring.annotation.*;
 
 @BotController
@@ -33,29 +34,36 @@ public class RemindBotController {
     bot  > [Сохранить](/save) [Отменить](/cancel)
     user > [Сохранить](/save)
      */
-    @SceneStep(value = "/remind", next = "/text")
+
+    private String text;
+    private String time;
+
+    @Scene(value = "/remind", next = "/text", mode = BotSceneMode.START)
     public SendMessage startScene(Update update) {
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
-                .setText("Что тебе напомнить? /text");
+                .setText("Что тебе напомнить? /text или напишите что напомнить");
     }
 
-    @SceneStep(value = "/text", next = "/time")
+    @Scene(value = "/text", patterns = "(.?)", next = "/time")
     public SendMessage text(Update update) {
+        this.text = update.getMessage().getText().replace("/text", "");
+
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
-                .setText("Когда напомнить? /time");
+                .setText("Когда напомнить? /time или время");
     }
 
-    @SceneStep(value = "/time", next = {"/save", "/cancel"})
+    @Scene(value = "/time", patterns = "(.?)", next = {"/save", "/cancel"})
     public SendMessage time(Update update) {
+        this.time = update.getMessage().getText().replace("/time", "");
         // Parse time
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
-                .setText("Сохранить или отменить? /save или /cancel");
+                .setText(String.format("Напомнить %s %s. /save или /cancel", time, text));
     }
 
-    @SceneStep(value = "/save")
+    @Scene(value = "/save", patterns = {"([Сс]охранить)"}, mode = BotSceneMode.CONTROL)
     public SendMessage save(Update update) {
         // TODO: checkRequireCommands and save
         return new SendMessage()
@@ -63,7 +71,7 @@ public class RemindBotController {
                 .setText("Напоминание сохранено!");
     }
 
-    @SceneStep(value = "/cancel")
+    @Scene(value = "/cancel", patterns = {"([Оо]тмена)", "([Оо]тменить)"}, mode = BotSceneMode.CONTROL)
     public SendMessage cancel(Update update) {
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())

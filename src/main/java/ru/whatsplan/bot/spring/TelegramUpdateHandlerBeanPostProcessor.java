@@ -7,7 +7,7 @@ import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import ru.whatsplan.bot.spring.annotation.*;
-import ru.whatsplan.bot.spring.annotation.SceneStep;
+import ru.whatsplan.bot.spring.annotation.Scene;
 import ru.whatsplan.bot.spring.bot.BotScript;
 import ru.whatsplan.bot.spring.bot.BotScriptContainer;
 
@@ -24,6 +24,9 @@ public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor
     private BotScriptContainer container = BotScriptContainer.getInstance();
     private Map<String, Class<?>> botControllerMap = new HashMap<>();
     private Map<String, Object> botSceneBeanMap = new HashMap<>();
+
+    private Map<String, BotScript> botStartSceneCommandMap = new HashMap<>();
+    private Set<BotScript> botControlSceneCommands = new HashSet<>();
 
     @Override
     public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
@@ -55,9 +58,11 @@ public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor
         // Получить все методы помеченные анатацией @SceneStep
         List<Method> sceneStepMethods = botControllerMap.values().stream()
                 .flatMap(controller -> Arrays.stream(controller.getMethods()))
-                .filter(method -> method.isAnnotationPresent(SceneStep.class))
+                .filter(method -> method.isAnnotationPresent(Scene.class))
                 .collect(Collectors.toList());
 
+        // Начинаем с метода помеченного анатацией @StartBot,
+        // затем проходим по методам которые соответсвуют значению поля анатации next()
         generateStartController(bean, startBotMethod, sceneStepMethods);
 
         return bean;
@@ -78,8 +83,8 @@ public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor
                 return update != null && update.hasMessage() && update.getMessage().hasText();
             }
         };
-        BotScript startBotScript = new BotScript(startSceneCommand, controller, nextScripts);
-        container.setScript(startBotScript);
+        BotScript startBotScript = new BotScript(BotSceneMode.START, startSceneCommand, controller, nextScripts);
+        container.setScript(startBotScript, botStartSceneCommandMap);
     }
 
     private Set<BotScript> generateNextController(List<Method> sceneSteps, String[] startSceneNextCommands) {
@@ -89,12 +94,13 @@ public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor
             // Нахожу методы у которых value = nextCommand
             Method method = sceneSteps.stream()
                     .filter(currentMethod -> Arrays.asList(
-                                currentMethod.getAnnotation(SceneStep.class).value())
+                                currentMethod.getAnnotation(Scene.class).value())
                                     .contains(nextCommand))
                     .findFirst().orElse(null);
 
             if (method != null) {
-                SceneStep sceneStep = method.getAnnotation(SceneStep.class);
+                Scene sceneStep = method.getAnnotation(Scene.class);
+                BotSceneMode mode = sceneStep.mode();
                 String[] next = sceneStep.next();
                 List<Pattern> patterns = Arrays.stream(sceneStep.patterns())
                         .map(Pattern::compile)
@@ -112,8 +118,22 @@ public class TelegramUpdateHandlerBeanPostProcessor implements BeanPostProcessor
                         return update != null && update.hasMessage() && update.getMessage().hasText();
                     }
                 };
-
-                nextScripts.add(new BotScript(nextCommand, controller, patterns, generateNextController(sceneSteps, next)));
+                BotScript botScript;
+                if (mode.equals(BotSceneMode.START)) {
+                    // TODO: придумать как здесь добавить controls
+                    botControlSceneCommands.clear();
+                    botScript = new BotScript(mode, nextCommand, controller, patterns, generateNextController(sceneSteps, next));
+                    botStartSceneCommandMap.put(nextCommand, botScript);
+                    nextScripts.add(botScript);
+                }
+                if (mode.equals(BotSceneMode.STEP)) {
+                    botScript = new BotScript(mode, nextCommand, controller, patterns, generateNextController(sceneSteps, next), botControlSceneCommands);
+                    nextScripts.add(botScript);
+                }
+                if (mode.equals(BotSceneMode.CONTROL)) {
+                    botScript = new BotScript(mode, nextCommand, controller, patterns, generateNextController(sceneSteps, next));
+                    botControlSceneCommands.add(botScript);
+                }
             }
         }
 
