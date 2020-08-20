@@ -1,9 +1,21 @@
 package ru.whatsplan.bot.controller;
 
+import org.dom4j.rule.Action;
+import org.telegram.telegrambots.meta.api.methods.ActionType;
+import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.send.SendVenue;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ForceReplyKeyboard;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButtonPollType;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import ru.whatsplan.bot.spring.BotSceneMode;
 import ru.whatsplan.bot.spring.annotation.*;
+
+import java.util.List;
 
 @BotController
 public class RemindBotController {
@@ -37,11 +49,18 @@ public class RemindBotController {
 
     private String text;
     private String time;
+    private Integer lastMessageId;
 
-    @Scene(value = "/remind", next = "/text", mode = BotSceneMode.START)
+    @Scene(value = "/remind", patterns = "([Нн]апоминание)", next = "/text", mode = BotSceneMode.START)
     public SendMessage startScene(Update update) {
+        this.lastMessageId = update.getMessage().getMessageId();
+
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
+                .setReplyMarkup(new ReplyKeyboardMarkup(List.of(
+                        new KeyboardRow() {{ add(new KeyboardButton("Исправить ошибки проекта")); }},
+                        new KeyboardRow() {{ add(new KeyboardButton("Сделать что-нибудь")); }}
+                )))
                 .setText("Что тебе напомнить? /text или напишите что напомнить");
     }
 
@@ -51,15 +70,30 @@ public class RemindBotController {
 
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
+                .setReplyMarkup(new ReplyKeyboardMarkup(List.of(
+                        new KeyboardRow() {{ add(new KeyboardButton("Вечером")); }},
+                        new KeyboardRow() {{ add(new KeyboardButton("Завтра")); }}
+                )))
                 .setText("Когда напомнить? /time или время");
     }
 
     @Scene(value = "/time", patterns = "(.?)", next = {"/save", "/cancel"})
     public SendMessage time(Update update) {
         this.time = update.getMessage().getText().replace("/time", "");
+
+        KeyboardRow keyboardButtons = new KeyboardRow();
+        keyboardButtons.add(new KeyboardButton("Сохранить"));
+        keyboardButtons.add(new KeyboardButton("Отменить"));
+
+        ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup();
+        replyKeyboardMarkup.setResizeKeyboard(true);
+        replyKeyboardMarkup.setSelective(true);
+        replyKeyboardMarkup.setOneTimeKeyboard(true);
+        replyKeyboardMarkup.setKeyboard(List.of(keyboardButtons));
         // Parse time
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
+                .setReplyMarkup(replyKeyboardMarkup)
                 .setText(String.format("Напомнить %s %s. /save или /cancel", time, text));
     }
 
@@ -68,6 +102,7 @@ public class RemindBotController {
         // TODO: checkRequireCommands and save
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
+                .setReplyMarkup(new ReplyKeyboardRemove())
                 .setText("Напоминание сохранено!");
     }
 
@@ -75,6 +110,7 @@ public class RemindBotController {
     public SendMessage cancel(Update update) {
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
+                .setReplyMarkup(new ReplyKeyboardRemove())
                 .setText("Напоминание удалено!");
     }
 }
