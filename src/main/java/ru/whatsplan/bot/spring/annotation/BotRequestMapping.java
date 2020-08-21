@@ -1,6 +1,6 @@
 package ru.whatsplan.bot.spring.annotation;
 
-import ru.whatsplan.bot.spring.BotRequestMethod;
+import ru.whatsplan.bot.spring.bot.BotRequestMethod;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

@@ -1,4 +1,4 @@
-package ru.whatsplan.bot.spring;
+package ru.whatsplan.bot.spring.bot;
 
 public enum BotSceneMode {
     START,

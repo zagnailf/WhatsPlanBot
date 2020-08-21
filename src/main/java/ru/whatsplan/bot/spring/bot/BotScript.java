@@ -1,7 +1,6 @@
 package ru.whatsplan.bot.spring.bot;
 
 import ru.whatsplan.bot.spring.BotApiMethodController;
-import ru.whatsplan.bot.spring.BotSceneMode;
 
 import java.util.*;
 import java.util.regex.Pattern;

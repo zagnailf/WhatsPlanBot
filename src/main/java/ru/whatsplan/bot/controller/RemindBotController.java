@@ -1,18 +1,12 @@
 package ru.whatsplan.bot.controller;
 
-import org.dom4j.rule.Action;
-import org.telegram.telegrambots.meta.api.methods.ActionType;
-import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.send.SendVenue;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.ForceReplyKeyboard;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButtonPollType;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
-import ru.whatsplan.bot.spring.BotSceneMode;
+import ru.whatsplan.bot.spring.bot.BotSceneMode;
 import ru.whatsplan.bot.spring.annotation.*;
 
 import java.util.List;
@@ -49,12 +43,9 @@ public class RemindBotController {
 
     private String text;
     private String time;
-    private Integer lastMessageId;
 
     @Scene(value = "/remind", patterns = "([Нн]апоминание)", next = "/text", mode = BotSceneMode.START)
     public SendMessage startScene(Update update) {
-        this.lastMessageId = update.getMessage().getMessageId();
-
         return new SendMessage()
                 .setChatId(update.getMessage().getChatId())
                 .setReplyMarkup(new ReplyKeyboardMarkup(List.of(
